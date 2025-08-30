@@ -1,0 +1,20 @@
+# Node
+node_modules/
+**/node_modules/
+package-lock.json
+**/package-lock.json
+
+# Env files
+.env
+**/.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+**/dist/
+web/.vite/
+
+# System files
+.DS_Store
+
