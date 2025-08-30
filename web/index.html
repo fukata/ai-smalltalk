@@ -6,6 +6,9 @@
     <title>AI Smalltalk (Web)</title>
     <style>
       body { font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+      .banner { position: sticky; top: 0; left: 0; right: 0; z-index: 100; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #eed; background: #fff6f6; color: #a40000; }
+      .banner.info { background: #f6f8ff; color: #0b2b8a; border-color: #dfe7ff; }
+      .hidden { display: none; }
       header { padding: 12px 16px; border-bottom: 1px solid #eee; display:flex; gap:12px; align-items:center; }
       main { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 53px); }
       aside { border-right: 1px solid #eee; padding: 12px; display:flex; flex-direction:column; gap:12px; }
@@ -20,6 +23,13 @@
     </style>
   </head>
   <body>
+    <div id="banner" class="banner hidden">
+      <div id="bannerText"></div>
+      <div class="row">
+        <button id="bannerRetry">再試行</button>
+        <button id="bannerClose">閉じる</button>
+      </div>
+    </div>
     <header>
       <div id="status">未接続</div>
       <div class="row">
@@ -46,4 +56,3 @@
     <script type="module" src="/src/main.ts"></script>
   </body>
   </html>
-
