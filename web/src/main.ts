@@ -10,6 +10,10 @@ const pttBtn = document.getElementById('ptt') as HTMLButtonElement;
 const clearBtn = document.getElementById('clear') as HTMLButtonElement;
 const logEl = document.getElementById('log')!;
 const remoteAudio = document.getElementById('remoteAudio') as HTMLAudioElement;
+const bannerEl = document.getElementById('banner') as HTMLDivElement;
+const bannerTextEl = document.getElementById('bannerText') as HTMLDivElement;
+const bannerRetryBtn = document.getElementById('bannerRetry') as HTMLButtonElement;
+const bannerCloseBtn = document.getElementById('bannerClose') as HTMLButtonElement;
 
 const store = new ChatStore();
 let conn: RealtimeConnection | null = null;
@@ -21,6 +25,7 @@ let currentUserText = '';
 let currentUserInterimText = '';
 let speechRec: any | null = null;
 let speechRecActive = false;
+let lastConnectFn: (() => Promise<void>) | null = null;
 
 function setStatus(text: string) { statusEl.textContent = text; }
 
@@ -47,6 +52,25 @@ function appendAndPersist(msg: ChatMessage) {
 function renderLogs() {
   logEl.innerHTML = '';
   store.all().forEach(appendAndPersist);
+}
+
+function showBanner(kind: 'error' | 'info', text: string, onRetry?: () => void) {
+  bannerEl.classList.remove('hidden');
+  bannerEl.classList.toggle('info', kind === 'info');
+  bannerTextEl.textContent = text;
+  if (onRetry) {
+    bannerRetryBtn.style.display = '';
+    bannerRetryBtn.onclick = () => { onRetry(); };
+  } else {
+    bannerRetryBtn.style.display = 'none';
+    bannerRetryBtn.onclick = null as any;
+  }
+}
+
+function hideBanner() {
+  bannerEl.classList.add('hidden');
+  bannerTextEl.textContent = '';
+  bannerRetryBtn.onclick = null as any;
 }
 
 async function loadPersonas() {
@@ -82,28 +106,49 @@ async function loadPersonas() {
 }
 
 function bindUI() {
-  connectBtn.onclick = async () => {
+  async function connectOnce() {
     if (conn) return;
     try {
+      hideBanner();
       const instructions = currentPersona?.system;
       conn = await connectRealtime({
         instructions,
         onStatus: setStatus,
         onTrack: (stream) => { remoteAudio.srcObject = stream; },
         onData: (evt) => handleRealtimeEvent(evt),
+        onError: (err) => {
+          console.error('connect error', err);
+          showBanner('error', '接続に失敗しました。再試行してください。', () => connectOnce());
+        },
+        onDisconnect: (reason) => {
+          console.warn('disconnected', reason);
+          setStatus('切断');
+          showBanner('error', '切断されました。再接続できます。', () => reconnect());
+        },
       });
       setStatus('接続済み');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setStatus('接続失敗');
+      const msg = String(e?.message || e || '接続に失敗しました');
+      showBanner('error', msg, () => connectOnce());
     }
-  };
+  }
+  async function reconnect() {
+    try {
+      if (conn) { try { conn.close(); } catch {} conn = null; }
+      await connectOnce();
+    } catch {}
+  }
+  lastConnectFn = connectOnce;
+  connectBtn.onclick = connectOnce;
 
   disconnectBtn.onclick = () => {
     if (!conn) return;
     conn.close();
     conn = null;
     setStatus('未接続');
+    showBanner('info', '切断しました。再接続する場合は「接続」をクリック。');
   };
 
   personaSel.onchange = async () => {
@@ -183,6 +228,9 @@ function bindUI() {
   window.addEventListener('touchend', pttUp);
 
   clearBtn.onclick = () => { store.clear(); renderLogs(); };
+
+  bannerCloseBtn.onclick = hideBanner;
+  bannerRetryBtn.onclick = () => { if (lastConnectFn) lastConnectFn(); };
 }
 
 function handleRealtimeEvent(evt: any) {
