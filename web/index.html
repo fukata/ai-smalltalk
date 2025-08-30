@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Smalltalk (Web)</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+      header { padding: 12px 16px; border-bottom: 1px solid #eee; display:flex; gap:12px; align-items:center; }
+      main { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 53px); }
+      aside { border-right: 1px solid #eee; padding: 12px; display:flex; flex-direction:column; gap:12px; }
+      section { padding: 12px; display: flex; flex-direction: column; height: 100%; }
+      #log { flex: 1; overflow: auto; border: 1px solid #eee; padding: 8px; background: #fafafa; }
+      .msg { margin-bottom: 6px; }
+      .msg .meta { color: #666; font-size: 12px; }
+      .row { display:flex; gap:8px; align-items:center; }
+      button { padding: 8px 12px; }
+      #ptt { font-weight: 600; }
+      #status { color: #444; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div id="status">未接続</div>
+      <div class="row">
+        <label for="persona">ペルソナ:</label>
+        <select id="persona"></select>
+      </div>
+      <button id="connect">接続</button>
+      <button id="disconnect">切断</button>
+    </header>
+    <main>
+      <aside>
+        <div>
+          <button id="ptt">押して話す（PTT）</button>
+        </div>
+        <div class="row">
+          <button id="clear">ログをクリア</button>
+        </div>
+        <audio id="remoteAudio" autoplay></audio>
+      </aside>
+      <section>
+        <div id="log"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+  </html>
+
