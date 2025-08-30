@@ -14,27 +14,38 @@ const remoteAudio = document.getElementById('remoteAudio') as HTMLAudioElement;
 const store = new ChatStore();
 let conn: RealtimeConnection | null = null;
 let currentPersona: Persona | null = null;
+let currentAssistantDiv: HTMLDivElement | null = null;
+let currentAssistantText = '';
+let currentUserDiv: HTMLDivElement | null = null;
+let currentUserText = '';
+let speechRec: any | null = null;
+let speechRecActive = false;
 
 function setStatus(text: string) { statusEl.textContent = text; }
 
-function append(msg: ChatMessage) {
-  store.push(msg);
+function createMsgDiv(role: 'user' | 'assistant' | 'system', content: string, ts = nowIso()): HTMLDivElement {
   const div = document.createElement('div');
   div.className = 'msg';
   const meta = document.createElement('div');
   meta.className = 'meta';
-  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.role}`;
+  meta.textContent = `[${new Date(ts).toLocaleTimeString()}] ${role}`;
   const body = document.createElement('div');
-  body.textContent = msg.content;
+  body.textContent = content;
   div.appendChild(meta);
   div.appendChild(body);
   logEl.appendChild(div);
   logEl.scrollTop = logEl.scrollHeight;
+  return div;
+}
+
+function appendAndPersist(msg: ChatMessage) {
+  store.push(msg);
+  createMsgDiv(msg.role, msg.content, msg.timestamp);
 }
 
 function renderLogs() {
   logEl.innerHTML = '';
-  store.all().forEach(append);
+  store.all().forEach(appendAndPersist);
 }
 
 async function loadPersonas() {
@@ -112,6 +123,35 @@ function bindUI() {
     if (!conn?.micTrack) return;
     conn.micTrack.enabled = true;
     setStatus('録音中...');
+    // UI: ユーザの一時メッセージ枠
+    currentUserText = '';
+    currentUserDiv = createMsgDiv('user', '（話しています…）');
+    // Web Speech API（あれば）でクライアント側STT
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SR) {
+      try {
+        speechRec = new SR();
+        speechRec.lang = (currentPersona?.language || 'ja').startsWith('ja') ? 'ja-JP' : currentPersona?.language || 'en-US';
+        speechRec.continuous = true;
+        speechRec.interimResults = true;
+        speechRec.onresult = (ev: any) => {
+          let finalText = '';
+          let interimText = '';
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            const res = ev.results[i];
+            if (res.isFinal) finalText += res[0].transcript;
+            else interimText += res[0].transcript;
+          }
+          if (finalText) currentUserText += finalText;
+          const body = currentUserDiv?.children[1] as HTMLDivElement | undefined;
+          if (body) body.textContent = (currentUserText + (interimText ? ` ${interimText}` : '')).trim() || '（話しています…）';
+        };
+        speechRec.onerror = () => { /* 無視してフォールバック */ };
+        speechRec.onend = () => { speechRecActive = false; };
+        speechRec.start();
+        speechRecActive = true;
+      } catch { /* ignore */ }
+    }
   };
   const pttUp = () => {
     if (!conn?.micTrack) return;
@@ -120,6 +160,19 @@ function bindUI() {
     // 入力音声の確定と応答生成を要求
     conn.sendEvent({ type: 'input_audio_buffer.commit' });
     conn.sendEvent({ type: 'response.create' });
+
+    // 音声認識を止めてユーザメッセージを確定
+    try { if (speechRec && speechRecActive) speechRec.stop(); } catch {}
+    const text = (currentUserText || '（音声）').trim();
+    if (currentUserDiv) {
+      const body = currentUserDiv.children[1] as HTMLDivElement;
+      body.textContent = text;
+    }
+    // 永続化
+    const msg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: nowIso() };
+    store.push(msg);
+    currentUserDiv = null;
+    currentUserText = '';
   };
   pttBtn.addEventListener('mousedown', pttDown);
   pttBtn.addEventListener('touchstart', pttDown);
@@ -131,20 +184,59 @@ function bindUI() {
 
 function handleRealtimeEvent(evt: any) {
   // 代表的なイベントだけ処理（必要に応じて拡張）
-  if (evt?.type === 'response.output_text.delta') {
-    // 累積テキストの更新: 簡易に最後のassistant行へ追加
-    const last = store.all().slice(-1)[0];
-    if (last && last.role === 'assistant') {
-      last.content += evt.delta;
-      // 再描画簡略化のため、一旦末尾に同文を追加表示
-      append({ ...last, id: crypto.randomUUID(), timestamp: nowIso() });
-    } else {
-      append({ id: crypto.randomUUID(), role: 'assistant', content: evt.delta, timestamp: nowIso() });
+  if (!evt) return;
+  switch (evt.type) {
+    case 'response.created': {
+      // 新しい応答の先頭（表示用に枠だけつくる）
+      if (!currentAssistantDiv) {
+        currentAssistantText = '';
+        currentAssistantDiv = createMsgDiv('assistant', '');
+      }
+      break;
     }
-  }
-  if (evt?.type === 'response.completed') {
-    // 完了イベント（ステータス用）
-    setStatus('応答完了');
+    case 'response.output_text.delta': {
+      const delta: string = evt.delta || '';
+      if (!currentAssistantDiv) currentAssistantDiv = createMsgDiv('assistant', '');
+      currentAssistantText += delta;
+      const body = currentAssistantDiv.children[1] as HTMLDivElement;
+      body.textContent = currentAssistantText;
+      break;
+    }
+    case 'response.output_text.done':
+    case 'response.completed': {
+      // 応答確定 → 永続化
+      if (currentAssistantDiv) {
+        const text = currentAssistantText.trim();
+        const msg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: text, timestamp: nowIso() };
+        store.push(msg);
+      }
+      setStatus('応答完了');
+      currentAssistantDiv = null;
+      currentAssistantText = '';
+      break;
+    }
+    // 将来: STTがサーバから来る場合の取り扱い（仮）
+    case 'input_audio_buffer.transcript.delta': {
+      const delta: string = evt.delta || '';
+      if (!currentUserDiv) currentUserDiv = createMsgDiv('user', '');
+      currentUserText += delta;
+      (currentUserDiv.children[1] as HTMLDivElement).textContent = currentUserText;
+      break;
+    }
+    case 'input_audio_buffer.transcript.done': {
+      // 確定
+      if (currentUserDiv) {
+        const text = (currentUserText || '（音声）').trim();
+        (currentUserDiv.children[1] as HTMLDivElement).textContent = text;
+        const msg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: nowIso() };
+        store.push(msg);
+      }
+      currentUserDiv = null;
+      currentUserText = '';
+      break;
+    }
+    default:
+      break;
   }
 }
 
