@@ -1,0 +1,24 @@
+name: 機能リクエスト
+description: 機能追加や改善の提案
+labels: [feature]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: どのような課題を解決しますか？
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 受け入れ基準
+      description: 明確で検証可能な基準を列挙してください。
+      placeholder: |
+        - [ ] UIから実行できる
+        - [ ] localhostで動作する
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: 追加情報や参考リンクなど。
