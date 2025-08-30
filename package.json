@@ -1,0 +1,18 @@
+{
+  "name": "ai-smalltalk",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm --workspace server run dev\" \"npm --workspace web run dev\"",
+    "server": "npm --workspace server run dev",
+    "web": "npm --workspace web run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+
