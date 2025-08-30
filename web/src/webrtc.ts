@@ -43,8 +43,17 @@ export async function connectRealtime(options: {
 
   dc.onopen = () => {
     onStatus?.('データチャネル接続済み');
-    // PTT前提: サーバ側の自動VADを無効化
-    try { dc.send(JSON.stringify({ type: 'session.update', session: { turn_detection: { type: 'none' }, instructions } })); } catch {}
+    // PTT前提: サーバ側の自動VADを無効化し、テキスト出力も有効化
+    try {
+      dc.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          turn_detection: { type: 'none' },
+          instructions,
+          modalities: ['text', 'audio'],
+        },
+      }));
+    } catch {}
   };
   dc.onmessage = (ev) => {
     try { onData?.(JSON.parse(ev.data)); } catch { /* noop */ }

@@ -18,6 +18,7 @@ let currentAssistantDiv: HTMLDivElement | null = null;
 let currentAssistantText = '';
 let currentUserDiv: HTMLDivElement | null = null;
 let currentUserText = '';
+let currentUserInterimText = '';
 let speechRec: any | null = null;
 let speechRecActive = false;
 
@@ -143,8 +144,9 @@ function bindUI() {
             else interimText += res[0].transcript;
           }
           if (finalText) currentUserText += finalText;
+          currentUserInterimText = interimText;
           const body = currentUserDiv?.children[1] as HTMLDivElement | undefined;
-          if (body) body.textContent = (currentUserText + (interimText ? ` ${interimText}` : '')).trim() || '（話しています…）';
+          if (body) body.textContent = (currentUserText + (currentUserInterimText ? ` ${currentUserInterimText}` : '')).trim() || '（話しています…）';
         };
         speechRec.onerror = () => { /* 無視してフォールバック */ };
         speechRec.onend = () => { speechRecActive = false; };
@@ -159,11 +161,11 @@ function bindUI() {
     setStatus('待機中');
     // 入力音声の確定と応答生成を要求
     conn.sendEvent({ type: 'input_audio_buffer.commit' });
-    conn.sendEvent({ type: 'response.create' });
+    conn.sendEvent({ type: 'response.create', response: { modalities: ['text','audio'] } });
 
     // 音声認識を止めてユーザメッセージを確定
     try { if (speechRec && speechRecActive) speechRec.stop(); } catch {}
-    const text = (currentUserText || '（音声）').trim();
+    const text = (currentUserText || currentUserInterimText || '（音声）').trim();
     if (currentUserDiv) {
       const body = currentUserDiv.children[1] as HTMLDivElement;
       body.textContent = text;
@@ -173,6 +175,7 @@ function bindUI() {
     store.push(msg);
     currentUserDiv = null;
     currentUserText = '';
+    currentUserInterimText = '';
   };
   pttBtn.addEventListener('mousedown', pttDown);
   pttBtn.addEventListener('touchstart', pttDown);
@@ -185,7 +188,8 @@ function bindUI() {
 function handleRealtimeEvent(evt: any) {
   // 代表的なイベントだけ処理（必要に応じて拡張）
   if (!evt) return;
-  switch (evt.type) {
+  const t: string = String(evt.type || '');
+  switch (t) {
     case 'response.created': {
       // 新しい応答の先頭（表示用に枠だけつくる）
       if (!currentAssistantDiv) {
@@ -194,8 +198,10 @@ function handleRealtimeEvent(evt: any) {
       }
       break;
     }
-    case 'response.output_text.delta': {
-      const delta: string = evt.delta || '';
+    case 'response.output_text.delta':
+    case 'response.audio_transcript.delta':
+    case 'response.output_audio.transcript.delta': {
+      const delta: string = evt.delta || evt.text || '';
       if (!currentAssistantDiv) currentAssistantDiv = createMsgDiv('assistant', '');
       currentAssistantText += delta;
       const body = currentAssistantDiv.children[1] as HTMLDivElement;
@@ -203,11 +209,14 @@ function handleRealtimeEvent(evt: any) {
       break;
     }
     case 'response.output_text.done':
+    case 'response.audio_transcript.done':
+    case 'response.output_audio.transcript.done':
     case 'response.completed': {
       // 応答確定 → 永続化
       if (currentAssistantDiv) {
         const text = currentAssistantText.trim();
-        const msg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: text, timestamp: nowIso() };
+        const content = text || '（音声応答）';
+        const msg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content, timestamp: nowIso() };
         store.push(msg);
       }
       setStatus('応答完了');
@@ -215,7 +224,25 @@ function handleRealtimeEvent(evt: any) {
       currentAssistantText = '';
       break;
     }
-    // 将来: STTがサーバから来る場合の取り扱い（仮）
+    default: {
+      // フォールバック: 任意の *.delta に文字列 delta があれば拾う
+      if (t.endsWith('.delta') && typeof evt.delta === 'string') {
+        if (!currentAssistantDiv) currentAssistantDiv = createMsgDiv('assistant', '');
+        currentAssistantText += evt.delta as string;
+        (currentAssistantDiv.children[1] as HTMLDivElement).textContent = currentAssistantText;
+      }
+      if (t.endsWith('.done')) {
+        if (currentAssistantDiv) {
+          const text = currentAssistantText.trim();
+          const msg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: text || '（音声応答）', timestamp: nowIso() };
+          store.push(msg);
+          currentAssistantDiv = null;
+          currentAssistantText = '';
+        }
+      }
+      break;
+    }
+    // 将来: サーバ側STT（ユーザ音声）の取り扱い
     case 'input_audio_buffer.transcript.delta': {
       const delta: string = evt.delta || '';
       if (!currentUserDiv) currentUserDiv = createMsgDiv('user', '');
@@ -235,8 +262,6 @@ function handleRealtimeEvent(evt: any) {
       currentUserText = '';
       break;
     }
-    default:
-      break;
   }
 }
 
